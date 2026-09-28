@@ -1,0 +1,15 @@
+# Unattended access on Linux (X11). Install as a *user* service:
+#   cp contrib/teamlooker-host.service ~/.config/systemd/user/
+#   teamlooker set-password          # permanent password (stored as SRP verifier)
+#   systemctl --user enable --now teamlooker-host
+[Unit]
+Description=TeamLooker host (acceso desatendido)
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/teamlooker host --no-session-password
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TeamLooker · Sesión remota</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="viewer">
+<div class="toolbar" id="toolbar">
+  <span class="partner" id="partner-label">Conectando…</span>
+  <div class="menu">
+    <button id="actions-btn">Acciones ▾</button>
+    <div class="menu-panel hidden" id="actions-menu">
+      <button data-combo="ctrl,alt,delete">Enviar Ctrl+Alt+Supr</button>
+      <button data-combo="cmd">Tecla Windows / Super</button>
+      <button data-combo="alt,tab">Alt+Tab</button>
+      <button data-combo="cmd,l">Bloquear equipo (Win+L)</button>
+      <button id="type-clipboard">Escribir el texto de mi portapapeles</button>
+      <button id="refresh-btn">Actualizar pantalla</button>
+    </div>
+  </div>
+  <div class="menu">
+    <button id="view-btn">Vista ▾</button>
+    <div class="menu-panel hidden" id="view-menu">
+      <label class="check menu-row"><input type="checkbox" id="fit" checked> Ajustar a la ventana</label>
+      <div class="menu-row">
+        <span class="small muted">Calidad</span>
+        <select id="quality">
+          <option value="speed">Optimizar velocidad</option>
+          <option value="balanced" selected>Equilibrada</option>
+          <option value="quality">Optimizar calidad</option>
+        </select>
+      </div>
+      <div class="menu-row">
+        <span class="small muted">Resolución transmitida</span>
+        <select id="scale">
+          <option value="1">100 %</option>
+          <option value="0.75">75 %</option>
+          <option value="0.5">50 %</option>
+          <option value="0.35">35 %</option>
+        </select>
+      </div>
+      <label class="check menu-row"><input type="checkbox" id="grayscale"> Escala de grises</label>
+      <label class="check menu-row"><input type="checkbox" id="show-cursor" checked> Mostrar cursor remoto</label>
+    </div>
+  </div>
+  <select id="monitor" title="Monitor remoto" class="hidden"></select>
+  <span class="sep"></span>
+  <button id="view-only" title="Solo ver: no enviar ratón ni teclado">Solo ver</button>
+  <button id="clip-sync" class="active" title="Sincronizar el portapapeles de texto">Portapapeles</button>
+  <button id="files-btn">Archivos</button>
+  <button id="chat-btn">Chat</button>
+  <button id="fullscreen-btn" title="Pantalla completa">⛶</button>
+  <span class="stats" id="stats"></span>
+  <button class="danger solid" id="disconnect-btn">Desconectar</button>
+</div>
+
+<div class="workspace">
+  <div class="screen-wrap fit" id="screen-wrap">
+    <div class="screen-inner" id="screen-inner">
+      <canvas id="screen" tabindex="0" width="16" height="9"></canvas>
+      <div id="remote-cursor" class="hidden"></div>
+    </div>
+    <div class="screen-msg hidden" id="screen-msg"></div>
+  </div>
+  <aside class="side-panel hidden" id="chat-panel">
+    <header>Chat <button class="icon" id="chat-close">✕</button></header>
+    <div class="chat-log" id="chat-log"></div>
+    <form id="chat-form">
+      <input type="text" id="chat-input" placeholder="Escribe un mensaje…" maxlength="4000">
+      <button type="submit" class="primary">Enviar</button>
+    </form>
+  </aside>
+</div>
+
+<div class="overlay" id="auth-overlay">
+  <form class="dialog" id="auth-form">
+    <h2>Autenticación</h2>
+    <p class="muted" id="auth-text">Introduce la contraseña que aparece en el equipo remoto.</p>
+    <input type="password" id="password" placeholder="Contraseña" autocomplete="off" required>
+    <div class="error-text" id="auth-error"></div>
+    <div class="actions">
+      <button type="button" id="auth-cancel">Cancelar</button>
+      <button type="submit" class="primary" id="auth-submit">Iniciar sesión</button>
+    </div>
+  </form>
+</div>
+
+<div class="overlay hidden" id="files-overlay">
+  <div class="files-dialog">
+    <header>
+      <span>Transferencia de archivos</span>
+      <button class="icon" id="files-close">✕</button>
+    </header>
+    <div class="panes">
+      <div class="pane" id="pane-local"></div>
+      <div class="transfer-buttons">
+        <button class="primary" id="upload-btn" title="Enviar la selección local a la carpeta remota">Enviar ▶</button>
+        <button class="primary" id="download-btn" title="Recibir la selección remota en la carpeta local">◀ Recibir</button>
+      </div>
+      <div class="pane" id="pane-remote"></div>
+    </div>
+    <div class="transfers hidden" id="transfers"></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="ended-overlay">
+  <div class="dialog">
+    <h2>Sesión finalizada</h2>
+    <p class="muted" id="ended-text">La conexión con el equipo remoto se ha cerrado.</p>
+    <div class="actions">
+      <button type="button" id="reconnect-btn">Reconectar</button>
+      <button type="button" class="primary" id="close-btn">Cerrar</button>
+    </div>
+  </div>
+</div>
+<div id="toasts"></div>
+<script src="/static/common.js"></script>
+<script src="/static/filemanager.js"></script>
+<script src="/static/viewer.js"></script>
+</body>
+</html>

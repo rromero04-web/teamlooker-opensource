@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teamlooker"
+version = "0.1.0"
+description = "Escritorio remoto de código abierto: control remoto, transferencia de archivos, chat y portapapeles con cifrado de extremo a extremo."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["remote desktop", "remote control", "teamviewer alternative", "vnc", "screen sharing"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Networking",
+    "Environment :: Web Environment",
+]
+dependencies = [
+    "aiohttp>=3.9",
+    "cryptography>=41",
+    "mss>=9",
+    "Pillow>=10",
+    "pynput>=1.7",
+    "pyperclip>=1.8",
+]
+
+[project.optional-dependencies]
+relay = []
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+teamlooker = "teamlooker.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["teamlooker*"]
+
+[tool.setuptools.package-data]
+"teamlooker.ui" = ["static/*"]
