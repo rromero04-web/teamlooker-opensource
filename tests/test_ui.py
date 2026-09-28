@@ -8,6 +8,7 @@ from teamlooker.ui.server import UIServer
 @pytest.fixture
 async def ui(relay, host, tmp_path):
     config = Config(tmp_path / "ui-config.json")
+    config.mode = "relay"
     config.data["relay"] = f"127.0.0.1:{relay.port}"
     server = UIServer(config, None, token="secret-token")
     client = TestClient(TestServer(server.app))

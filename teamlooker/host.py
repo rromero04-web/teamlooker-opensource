@@ -15,6 +15,7 @@ from typing import Callable
 from teamlooker import __version__
 from teamlooker.clipboard import Clipboard
 from teamlooker.config import Config
+from teamlooker.direct import DirectAddress, DirectHost
 from teamlooker.files import (FileOpError, TransferReceiver, fs_operation, list_dir,
                               send_file)
 from teamlooker.framing import close_writer, recv_json, send_json
@@ -42,6 +43,7 @@ class HostService:
                  on_event: Callable[[dict], None] | None = None):
         self.config = config
         self.relay = relay or RelayAddress.parse(config.relay)
+        self.mode = config.mode
         self.capturer_factory = capturer_factory
         self._input = input_controller
         self._clipboard = clipboard
@@ -53,6 +55,8 @@ class HostService:
         self._failures = 0
         self._locked_until = 0.0
         self._control_writer: asyncio.StreamWriter | None = None
+        self._direct: DirectHost | None = None
+        self.direct_address = DirectAddress(port=config.direct_port)
         self._stopped = False
         self._runner: asyncio.Task | None = None
         self.session_password = ""
@@ -85,7 +89,9 @@ class HostService:
             "password": self.session_password,
             "status": self.status,
             "status_detail": self.status_detail,
+            "mode": self.mode,
             "relay": str(self.relay),
+            "direct": self.direct_address.as_dict(),
             "permanent_password": self.config.permanent_verifier is not None,
             "permissions": self.config.permissions,
             "sessions": [s.describe() for s in self.sessions.values()],
@@ -121,19 +127,74 @@ class HostService:
         self.status, self.status_detail = status, detail
         self.emit("status", status=status, detail=detail, id=self.device_id)
 
-    # --- relay connection -------------------------------------------------------
+    # --- reachability -----------------------------------------------------------
 
     def set_relay(self, relay: RelayAddress) -> None:
         self.relay = relay
         self.config.relay = str(relay)
         self.reconnect()
 
+    def set_mode(self, mode: str) -> None:
+        mode = "relay" if mode == "relay" else "direct"
+        if mode != self.mode:
+            self.mode = mode
+            self.config.mode = mode
+            self.reconnect()
+
     def reconnect(self) -> None:
-        writer = self._control_writer
-        if writer is not None:
-            writer.close()
+        """Drop the current transport so run() rebuilds it (mode/relay change)."""
+        asyncio.create_task(self._restart())
+
+    async def _restart(self) -> None:
+        # Fully tear the old runner down (its CancelledError handler closes the
+        # listener) before starting a new one, so there is no overlap.
+        old = self._runner
+        if old is not None:
+            old.cancel()
+            try:
+                await old
+            except (asyncio.CancelledError, Exception):
+                pass
+        if not self._stopped:
+            self._runner = asyncio.create_task(self.run())
 
     async def run(self) -> None:
+        try:
+            if self.mode == "direct":
+                await self._run_direct()
+            else:
+                await self._run_relay()
+        except asyncio.CancelledError:
+            await self._teardown_direct()
+            raise
+
+    async def _run_direct(self) -> None:
+        self._set_status("connecting", f"puerto {self.config.direct_port}")
+        self._direct = DirectHost(self._serve_connection, self.config.direct_port,
+                                  enable_upnp=self.config.enable_upnp)
+        try:
+            self.direct_address = await self._direct.start()
+        except OSError as exc:
+            self._set_status("offline", f"no se pudo abrir el puerto {self.config.direct_port}: {exc}")
+            return
+        code = self.direct_address.code or ""
+        self._set_status("online", f"puerto {self.direct_address.port}")
+        log.info("online (direct) on port %s, code %s", self.direct_address.port, code)
+        # Poll for the async UPnP result so the UI learns the public address.
+        for _ in range(20):
+            await asyncio.sleep(1)
+            if self.direct_address.public_ip:
+                self.emit("status", status="online", detail=f"puerto {self.direct_address.port}",
+                          id=self.device_id)
+                break
+        await asyncio.Event().wait()
+
+    async def _teardown_direct(self) -> None:
+        if self._direct is not None:
+            await self._direct.stop()
+            self._direct = None
+
+    async def _run_relay(self) -> None:
         backoff = 1
         while not self._stopped:
             self._set_status("connecting", str(self.relay))
@@ -156,8 +217,8 @@ class HostService:
                     if kind == "ping":
                         await send_json(writer, {"type": "pong"})
                     elif kind == "incoming":
-                        asyncio.create_task(self._accept(str(msg.get("session")),
-                                                         str(msg.get("peer", ""))))
+                        asyncio.create_task(self._accept_relay(str(msg.get("session")),
+                                                              str(msg.get("peer", ""))))
             except (OSError, asyncio.IncompleteReadError, ValueError):
                 pass
             finally:
@@ -173,7 +234,10 @@ class HostService:
 
     async def stop(self) -> None:
         self._stopped = True
-        self.reconnect()
+        await self._teardown_direct()
+        writer = self._control_writer
+        if writer is not None:
+            writer.close()
         for session in list(self.sessions.values()):
             await session.close()
         if self._runner:
@@ -183,11 +247,15 @@ class HostService:
             except (asyncio.CancelledError, Exception):
                 pass
 
-    async def _accept(self, session_id: str, peer: str) -> None:
+    async def _accept_relay(self, session_id: str, peer: str) -> None:
         try:
             reader, writer = await accept_session(self.relay, session_id)
         except (OSError, asyncio.TimeoutError, RelayError, asyncio.IncompleteReadError):
             return
+        await self._serve_connection(reader, writer, peer)
+
+    async def _serve_connection(self, reader, writer, peer: str) -> None:
+        """Authenticate a raw connection and run the session (direct or relay)."""
         try:
             channel, label = await host_handshake(reader, writer, self.verifiers(),
                                                   self.lock_remaining())

@@ -4,79 +4,112 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TeamLooker</title>
-<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/favicon.ico" sizes="any">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="home">
 <header class="topbar">
-  <div class="brand">
-    <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>
-    TeamLooker
-  </div>
+  <img class="wordmark" src="/static/wordmark.svg" alt="TeamLooker" height="34">
   <div class="spacer"></div>
-  <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">Conectando…</span></div>
+  <div class="status" id="status" title="">
+    <span class="dot" id="status-dot"></span><span id="status-text">Iniciando…</span>
+  </div>
 </header>
 
-<main class="home">
-  <section class="cards">
-    <div class="card">
-      <h2>Permitir control remoto</h2>
-      <p class="subtitle">Comparte este ID y la contraseña con quien vaya a conectarse a este equipo.</p>
-      <div class="field-label">Tu ID</div>
-      <div class="value-row">
-        <div class="big-value" id="my-id">— — —</div>
-        <button class="icon" id="copy-id" title="Copiar ID">Copiar</button>
+<main class="home-main">
+  <section class="hero">
+    <!-- This computer -->
+    <div class="card hero-card">
+      <div class="card-head">
+        <h2>Este equipo</h2>
+        <span class="badge" id="mode-badge">Directo</span>
       </div>
-      <div class="field-label">Contraseña</div>
-      <div class="value-row">
-        <div class="big-value" id="my-password">······</div>
-        <button class="icon" id="new-password" title="Generar una contraseña nueva">Nueva</button>
+      <p class="subtitle" id="share-hint">Comparte estos datos con quien vaya a controlar este equipo.</p>
+
+      <div class="credential" id="code-block">
+        <span class="field-label">Código de conexión</span>
+        <div class="value-row">
+          <div class="code-value" id="my-code">·····</div>
+          <button class="icon copy" id="copy-code" title="Copiar código">⧉</button>
+        </div>
+        <div class="address-list" id="address-list"></div>
+      </div>
+
+      <div class="credential" id="id-block" hidden>
+        <span class="field-label">Tu ID</span>
+        <div class="value-row">
+          <div class="code-value" id="my-id">— — —</div>
+          <button class="icon copy" id="copy-id" title="Copiar ID">⧉</button>
+        </div>
+      </div>
+
+      <div class="credential">
+        <span class="field-label">Contraseña</span>
+        <div class="value-row">
+          <div class="code-value password" id="my-password">······</div>
+          <button class="icon" id="toggle-password" title="Mostrar/ocultar">👁</button>
+          <button class="icon" id="new-password" title="Generar contraseña nueva">↻</button>
+        </div>
       </div>
       <p class="small muted" id="unattended-note"></p>
     </div>
 
-    <div class="card">
-      <h2>Controlar un equipo remoto</h2>
-      <p class="subtitle">Introduce el ID del asociado.</p>
+    <!-- Control a remote computer -->
+    <div class="card hero-card accent">
+      <div class="card-head"><h2>Controlar otro equipo</h2></div>
+      <p class="subtitle" id="connect-hint">Escribe el código de conexión (o IP:puerto) del equipo remoto.</p>
       <form id="connect-form" autocomplete="off">
-        <div class="field-label">ID del asociado</div>
-        <input type="text" class="partner-input" id="partner-id" inputmode="numeric" placeholder="123 456 789" maxlength="11" required>
-        <div class="mode">
-          <label class="check"><input type="radio" name="mode" value="control" checked> Control remoto</label>
-          <label class="check"><input type="radio" name="mode" value="files"> Transferencia de archivos</label>
+        <span class="field-label" id="target-label">Código del asociado</span>
+        <input type="text" class="target-input" id="target" placeholder="XXXXX-XXXXX" autocomplete="off" required>
+        <div class="segmented" role="tablist">
+          <label class="seg"><input type="radio" name="mode" value="control" checked><span>🖱 Control remoto</span></label>
+          <label class="seg"><input type="radio" name="mode" value="files"><span>📁 Archivos</span></label>
         </div>
-        <button type="submit" class="primary" style="width:100%">Conectar</button>
+        <button type="submit" class="primary big" id="connect-btn">Conectar</button>
       </form>
     </div>
   </section>
 
   <section class="card" id="sessions-card">
-    <h2>Sesiones entrantes</h2>
+    <div class="card-head"><h2>Sesiones entrantes</h2></div>
     <p class="subtitle">Personas conectadas ahora mismo a este equipo.</p>
     <div id="sessions"><div class="empty">No hay nadie conectado.</div></div>
   </section>
 
   <section class="card">
-    <h2>Conexiones recientes</h2>
+    <div class="card-head"><h2>Conexiones recientes</h2></div>
     <div class="list" id="recent"></div>
   </section>
 
   <section class="card">
     <details class="settings" id="settings">
-      <summary>Opciones</summary>
+      <summary>⚙ Opciones</summary>
       <div class="settings-grid">
         <div>
-          <h3>Servidor de conexión</h3>
-          <p class="small muted">Dirección del relay (<code>host:puerto</code> o <code>tls://host:puerto</code>). Todo el tráfico va cifrado de extremo a extremo: el servidor no puede verlo.</p>
-          <form class="row" id="relay-form">
-            <input type="text" id="relay" required>
-            <button type="submit">Guardar</button>
-          </form>
-          <h3 style="margin-top:14px">Nombre de este equipo</h3>
-          <form class="row" id="name-form">
-            <input type="text" id="device-name" maxlength="64">
-            <button type="submit">Guardar</button>
-          </form>
+          <h3>Modo de conexión</h3>
+          <div class="segmented full" id="mode-switch">
+            <label class="seg"><input type="radio" name="conn-mode" value="direct"><span>Directo (sin servidor)</span></label>
+            <label class="seg"><input type="radio" name="conn-mode" value="relay"><span>Servidor propio</span></label>
+          </div>
+          <div id="direct-settings">
+            <div class="field-label">Puerto de escucha</div>
+            <form class="row" id="port-form">
+              <input type="number" id="direct-port" min="1" max="65535">
+              <button type="submit">Guardar</button>
+            </form>
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="upnp"> Abrir el puerto automáticamente (UPnP/NAT-PMP)</label>
+            <p class="small muted">Para conectar entre redes distintas, el router debe permitir UPnP o abrir este puerto manualmente. En la misma red local funciona sin configurar nada.</p>
+          </div>
+          <div id="relay-settings" hidden>
+            <div class="field-label">Servidor relay</div>
+            <form class="row" id="relay-form">
+              <input type="text" id="relay" placeholder="host:puerto o tls://host:puerto">
+              <button type="submit">Guardar</button>
+            </form>
+            <p class="small muted">Todo el tráfico va cifrado de extremo a extremo: el servidor no puede verlo.</p>
+          </div>
         </div>
         <div>
           <h3>Permisos para quien se conecte</h3>
@@ -84,10 +117,15 @@
           <label class="check"><input type="checkbox" data-perm="files"> Acceder y transferir archivos</label>
           <label class="check"><input type="checkbox" data-perm="clipboard"> Sincronizar portapapeles</label>
           <p class="small muted">Sin «controlar», las sesiones entrantes solo pueden ver la pantalla.</p>
+          <h3 style="margin-top:16px">Nombre de este equipo</h3>
+          <form class="row" id="name-form">
+            <input type="text" id="device-name" maxlength="64">
+            <button type="submit">Guardar</button>
+          </form>
         </div>
         <div>
           <h3>Acceso desatendido</h3>
-          <p class="small muted">Una contraseña permanente permite conectarse a este equipo sin que nadie esté delante. Se guarda solo un verificador SRP, nunca la contraseña.</p>
+          <p class="small muted">Una contraseña permanente permite conectarse sin que nadie esté delante. Se guarda solo un verificador SRP, nunca la contraseña.</p>
           <form class="row" id="permanent-form">
             <input type="password" id="permanent" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
             <button type="submit">Guardar</button>
@@ -97,8 +135,11 @@
       </div>
     </details>
   </section>
-  <p class="small muted" style="text-align:center">TeamLooker <span id="version"></span> · software libre (licencia MIT)</p>
+  <footer class="foot">
+    <img src="/static/logo.svg" height="18" alt=""> TeamLooker <span id="version"></span> · software libre (MIT) · cifrado de extremo a extremo
+  </footer>
 </main>
+
 <div id="toasts"></div>
 <template id="session-tpl">
   <div class="session">

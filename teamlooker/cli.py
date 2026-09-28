@@ -10,7 +10,7 @@ import sys
 
 from teamlooker import __version__, relay
 from teamlooker.config import Config
-from teamlooker.ids import format_id
+from teamlooker.ids import format_connection_code, format_id, parse_target
 
 
 def _config(args) -> Config:
@@ -44,21 +44,46 @@ async def _run_host(args) -> None:
         elif kind == "file_received":
             print(f"[archivo] recibido {event['path']}", flush=True)
 
+    if getattr(args, "relay_mode", False):
+        config.mode = "relay"
     host = HostService(config, on_event=on_event)
     if args.no_session_password:
         host._session_verifier = None
         host.session_password = ""
-    print(f"TeamLooker {__version__} (modo anfitrión sin interfaz)")
-    print(f"  ID:          {format_id(host.device_id)}")
-    if host.session_password:
-        print(f"  Contraseña:  {host.session_password}")
-    if config.permanent_verifier:
-        print("  Acceso desatendido: contraseña permanente activa")
-    print(f"  Servidor:    {config.relay}", flush=True)
     if not host.verifiers():
         print("Error: sin contraseña de sesión ni permanente nadie podría conectarse.", file=sys.stderr)
         return
-    await host.run()
+    print(f"TeamLooker {__version__} (modo anfitrión sin interfaz)")
+    task = host.start()
+    if config.mode == "direct":
+        await asyncio.sleep(0.5)
+        addr = host.direct_address
+        if host.session_password:
+            print(f"  Contraseña:  {host.session_password}")
+        if config.permanent_verifier:
+            print("  Acceso desatendido: contraseña permanente activa")
+        if addr.code:
+            print(f"  Código:      {format_connection_code(addr.code)}")
+        for ip in addr.local_ips:
+            print(f"  Dirección:   {ip}:{addr.port}  (misma red local)")
+        print("  Esperando el mapeo del router (UPnP/NAT-PMP)…", flush=True)
+        for _ in range(15):
+            await asyncio.sleep(1)
+            if host.direct_address.public_ip:
+                pub = host.direct_address
+                print(f"  Público:     {pub.public_ip}:{pub.public_port}  "
+                      f"(vía {pub.mapping_method})  código {format_connection_code(pub.code)}",
+                      flush=True)
+                break
+        else:
+            print("  (sin mapeo automático: entre redes distintas, abre el puerto en tu router)",
+                  flush=True)
+    else:
+        print(f"  ID:          {format_id(host.device_id)}")
+        if host.session_password:
+            print(f"  Contraseña:  {host.session_password}")
+        print(f"  Servidor:    {config.relay}", flush=True)
+    await task
 
 
 async def _screenshot(args) -> None:
@@ -70,7 +95,13 @@ async def _screenshot(args) -> None:
 
     config = _config(args)
     password = args.password or getpass.getpass("Contraseña del asociado: ")
-    viewer = ViewerSession(RelayAddress.parse(config.relay), args.partner, password, name="cli")
+    if config.mode == "relay":
+        viewer = ViewerSession.relay(RelayAddress.parse(config.relay), args.partner, password, name="cli")
+    else:
+        target = parse_target(args.partner)
+        if not target:
+            sys.exit("Código o dirección no válidos.")
+        viewer = ViewerSession.direct(target[0], target[1], password, name="cli")
     info = await viewer.connect()
     print(f"Conectado a {info['hostname']} ({info['os']})")
     image: Image.Image | None = None
@@ -104,8 +135,9 @@ def main(argv: list[str] | None = None) -> None:
     p_relay = sub.add_parser("relay", help="ejecutar un servidor relay")
     relay.add_arguments(p_relay)
 
-    p_host = sub.add_parser("host", help="compartir este equipo sin interfaz gráfica")
-    p_host.add_argument("--relay", help="servidor relay")
+    p_host = sub.add_parser("host", help="compartir este equipo sin interfaz gráfica (conexión directa)")
+    p_host.add_argument("--relay", help="usar un servidor relay en vez de conexión directa")
+    p_host.add_argument("--relay-mode", action="store_true", help="usar el modo relay guardado")
     p_host.add_argument("--permanent-password", help="establecer y guardar una contraseña permanente")
     p_host.add_argument("--no-session-password", action="store_true",
                         help="aceptar solo la contraseña permanente")
@@ -114,7 +146,7 @@ def main(argv: list[str] | None = None) -> None:
     p_pw.add_argument("--clear", action="store_true", help="desactivar el acceso desatendido")
 
     p_shot = sub.add_parser("screenshot", help="guardar una captura de un equipo remoto")
-    p_shot.add_argument("partner", help="ID del equipo remoto")
+    p_shot.add_argument("partner", help="código de conexión o IP:puerto del equipo remoto")
     p_shot.add_argument("-o", "--output", default="captura.png")
     p_shot.add_argument("-p", "--password", help="contraseña (se pedirá si falta)")
     p_shot.add_argument("--monitor", type=int, default=1, help="número de monitor (1, 2, …)")
@@ -152,10 +184,18 @@ def main(argv: list[str] | None = None) -> None:
             asyncio.run(_screenshot(args))
         elif command == "info":
             from teamlooker.ids import device_id_from_public_key
+            from teamlooker.nat import local_ips
             from teamlooker.relay_client import public_key_bytes
             config = Config()
-            print(f"ID:        {format_id(device_id_from_public_key(public_key_bytes(config.identity_key)))}")
-            print(f"Servidor:  {config.relay}")
+            print(f"Modo:      {config.mode}")
+            if config.mode == "direct":
+                print(f"Puerto directo: {config.direct_port}  (UPnP/NAT-PMP: "
+                      f"{'sí' if config.enable_upnp else 'no'})")
+                for ip in local_ips():
+                    print(f"Dirección local: {ip}:{config.direct_port}")
+            else:
+                print(f"ID:        {format_id(device_id_from_public_key(public_key_bytes(config.identity_key)))}")
+                print(f"Servidor:  {config.relay}")
             print(f"Config:    {config.path}")
             print(f"Permisos:  {config.permissions}")
             print(f"Acceso desatendido: {'sí' if config.permanent_verifier else 'no'}")

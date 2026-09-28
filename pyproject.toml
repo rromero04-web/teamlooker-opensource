@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "teamlooker"
-version = "0.1.0"
+version = "0.2.0"
 description = "Escritorio remoto de código abierto: control remoto, transferencia de archivos, chat y portapapeles con cifrado de extremo a extremo."
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,6 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 relay = []
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+build = ["pyinstaller>=6"]
 
 [project.scripts]
 teamlooker = "teamlooker.cli:main"

@@ -18,8 +18,8 @@ async def wait_for(predicate, timeout=5):
 
 
 def make_viewer(relay, host, password, **kwargs):
-    return ViewerSession(RelayAddress("127.0.0.1", relay.port), host.device_id, password,
-                         name="tester", **kwargs)
+    return ViewerSession.relay(RelayAddress("127.0.0.1", relay.port), host.device_id, password,
+                               name="tester", **kwargs)
 
 
 class Inbox:
@@ -160,7 +160,7 @@ async def test_regenerated_password_invalidates_old(relay, host):
 
 
 async def test_offline_target(relay):
-    viewer = ViewerSession(RelayAddress("127.0.0.1", relay.port), "123456789", "x")
+    viewer = ViewerSession.relay(RelayAddress("127.0.0.1", relay.port), "123456789", "x")
     with pytest.raises(RelayError) as err:
         await viewer.connect()
     assert err.value.code == "offline"

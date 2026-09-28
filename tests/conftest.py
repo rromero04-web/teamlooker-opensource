@@ -86,19 +86,40 @@ async def relay():
     await server.stop()
 
 
+async def _start(service):
+    service.start()
+    for _ in range(150):
+        if service.status == "online":
+            break
+        await asyncio.sleep(0.02)
+    assert service.status == "online", service.status_detail
+
+
 @pytest.fixture
 async def host(relay, tmp_path):
     events = []
     config = Config(tmp_path / "host-config.json")
+    config.mode = "relay"
     service = HostService(config, RelayAddress("127.0.0.1", relay.port),
                           capturer_factory=FakeCapturer, input_controller=FakeInput(),
                           clipboard=FakeClipboard(), on_event=events.append)
     service.events = events
-    service.start()
-    for _ in range(100):
-        if service.status == "online":
-            break
-        await asyncio.sleep(0.02)
-    assert service.status == "online"
+    await _start(service)
+    yield service
+    await service.stop()
+
+
+@pytest.fixture
+async def direct_host(tmp_path):
+    """A host in direct mode (UPnP disabled) listening on a random local port."""
+    events = []
+    config = Config(tmp_path / "direct-config.json")
+    config.mode = "direct"
+    config.direct_port = 0  # let the OS pick a free port
+    config.enable_upnp = False
+    service = HostService(config, capturer_factory=FakeCapturer, input_controller=FakeInput(),
+                          clipboard=FakeClipboard(), on_event=events.append)
+    service.events = events
+    await _start(service)
     yield service
     await service.stop()

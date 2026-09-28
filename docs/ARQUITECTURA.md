@@ -4,12 +4,24 @@
 
 | Componente | Módulo | Qué hace |
 |---|---|---|
-| Relay | `teamlooker/relay.py` | Registra anfitriones por ID, empareja visor ↔ anfitrión y reenvía bytes a ciegas. |
-| Anfitrión | `teamlooker/host.py` | Mantiene la conexión de control con el relay, autentica visores y sirve sesiones (pantalla, entrada, archivos, chat, portapapeles). |
-| Visor | `teamlooker/viewer.py` | Se conecta a un ID, autentica y ofrece una API asíncrona a la interfaz. |
+| Transporte directo | `teamlooker/direct.py` | El anfitrión escucha en un puerto TCP; el visor conecta directamente. **Modo por defecto, sin servidor.** |
+| Traversía NAT | `teamlooker/nat.py` | Abre el puerto en el router del anfitrión con UPnP/NAT-PMP (solo habla con el gateway local). |
+| Relay (opcional) | `teamlooker/relay.py` | Servidor propio que empareja por ID y reenvía bytes a ciegas, para redes donde la conexión directa no es posible. |
+| Anfitrión | `teamlooker/host.py` | Escucha (directo) o se registra (relay), autentica visores y sirve sesiones (pantalla, entrada, archivos, chat, portapapeles). |
+| Visor | `teamlooker/viewer.py` | Abre la conexión (directa o por relay), autentica y ofrece una API asíncrona a la interfaz. |
 | Interfaz | `teamlooker/ui/` | Servidor web local (aiohttp) en `127.0.0.1` y páginas HTML/JS. |
 
 La aplicación de escritorio (`teamlooker app`) ejecuta a la vez un anfitrión (para que el equipo sea accesible) y la interfaz, desde la que se abren sesiones de visor.
+
+## Conexión directa (por defecto)
+
+En modo directo no interviene ningún servidor:
+
+1. El anfitrión abre un servidor TCP en `direct_port` (7570 por defecto) e intenta, en segundo plano, abrir ese puerto en su router con **NAT-PMP** (UDP al gateway) y, si falla, **UPnP IGD** (descubrimiento SSDP + SOAP `AddPortMapping`). Ninguna de las dos cosa contacta con servidores externos: solo con el router local.
+2. La interfaz muestra un **código de conexión** de 10 caracteres (Crockford base32) que empaqueta la IP y el puerto (`ids.encode_connection_code`), además de las direcciones locales y la pública si el mapeo tuvo éxito.
+3. El visor introduce el código (o `IP:puerto`), abre una conexión TCP directa al anfitrión y ejecuta exactamente el mismo handshake SRP + canal AES-256-GCM que en modo relay.
+
+Si la traversía NAT no es posible (CGNAT, UPnP desactivado, red corporativa), el usuario abre el puerto manualmente o usa el modo relay. La seguridad no depende de la red: aunque el puerto esté abierto a internet, sin la contraseña no se establece la sesión, y hay bloqueo exponencial ante intentos fallidos.
 
 ## Protocolo con el relay
 

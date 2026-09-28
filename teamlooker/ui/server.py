@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import secrets
+import sys
 import webbrowser
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from teamlooker.clipboard import Clipboard
 from teamlooker.config import Config
 from teamlooker.files import FileOpError, fs_operation, list_dir
 from teamlooker.host import HostService
-from teamlooker.ids import normalize_id
+from teamlooker.ids import normalize_id, parse_target
 from teamlooker.messages import pack
 from teamlooker.relay_client import RelayAddress, RelayError
 from teamlooker.secure import AuthError, ChannelClosed
@@ -29,7 +30,17 @@ from teamlooker.viewer import ViewerSession
 
 log = logging.getLogger("teamlooker.ui")
 
-STATIC = Path(__file__).parent / "static"
+def _static_dir() -> Path:
+    # When frozen with PyInstaller the data files live under sys._MEIPASS.
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        bundled = Path(base) / "teamlooker" / "ui" / "static"
+        if bundled.is_dir():
+            return bundled
+    return Path(__file__).parent / "static"
+
+
+STATIC = _static_dir()
 
 AUTH_ERRORS = {
     "password": "Contraseña incorrecta.",
@@ -112,6 +123,8 @@ class UIServer:
         host = self.host.snapshot() if self.host else None
         return {"type": "state", "version": __version__, "host": host, "chats": self.chats,
                 "recent": self.config.recent, "relay": self.config.relay,
+                "mode": self.config.mode, "direct_port": self.config.direct_port,
+                "enable_upnp": self.config.enable_upnp,
                 "device_name": self.config.data.get("device_name", "")}
 
     def _broadcast(self, msg: dict) -> None:
@@ -170,6 +183,29 @@ class UIServer:
                 host.set_relay(relay)
             else:
                 self.config.relay = str(relay)
+        elif kind == "set_mode":
+            mode = "relay" if msg.get("mode") == "relay" else "direct"
+            if host:
+                host.set_mode(mode)
+            else:
+                self.config.mode = mode
+            return {"type": "notice", "message": "Modo directo (sin servidor)." if mode == "direct"
+                    else "Modo servidor propio (relay)."}
+        elif kind == "set_direct_port":
+            try:
+                port = int(msg.get("port"))
+            except (TypeError, ValueError):
+                return {"type": "error", "message": "Puerto no válido."}
+            if not (1 <= port <= 65535):
+                return {"type": "error", "message": "El puerto debe estar entre 1 y 65535."}
+            self.config.direct_port = port
+            if host:
+                host.reconnect()
+            return {"type": "notice", "message": f"Puerto directo: {port}."}
+        elif kind == "set_upnp":
+            self.config.enable_upnp = bool(msg.get("enabled"))
+            if host:
+                host.reconnect()
         elif kind == "set_device_name":
             self.config.data["device_name"] = str(msg.get("name", ""))[:64]
             self.config.save()
@@ -195,8 +231,8 @@ class UIServer:
             first = await ws.receive_json(timeout=600)
             if first.get("type") != "connect":
                 return ws
-            partner = normalize_id(first.get("partner", ""))
-            viewer = await self._connect(ws, partner, str(first.get("password", "")))
+            viewer = await self._connect(ws, str(first.get("target", first.get("partner", ""))),
+                                         str(first.get("password", "")))
             if viewer is None:
                 return ws
             runner = asyncio.create_task(self._pump_viewer(ws, viewer))
@@ -217,11 +253,7 @@ class UIServer:
             await ws.close()
         return ws
 
-    async def _connect(self, ws, partner: str, password: str) -> ViewerSession | None:
-        if len(partner) != 9:
-            await ws.send_json({"type": "connect_error", "message": "El ID debe tener 9 dígitos."})
-            return None
-
+    async def _connect(self, ws, target: str, password: str) -> ViewerSession | None:
         async def forward(msg: dict, data: bytes) -> None:
             if ws.closed:
                 return
@@ -230,10 +262,27 @@ class UIServer:
             else:
                 await ws.send_json(msg)
 
-        viewer = ViewerSession(RelayAddress.parse(self.config.relay), partner, password,
-                               name=self.config.data.get("device_name", "viewer"),
-                               on_message=forward, clipboard=self.clipboard)
-        await ws.send_json({"type": "connect_progress", "message": "Conectando con el servidor…"})
+        common = dict(name=self.config.data.get("device_name", "viewer"),
+                      on_message=forward, clipboard=self.clipboard)
+        recent_key = target.strip()
+        if self.config.mode == "relay":
+            partner = normalize_id(target)
+            if len(partner) != 9:
+                await ws.send_json({"type": "connect_error", "message": "El ID debe tener 9 dígitos."})
+                return None
+            viewer = ViewerSession.relay(RelayAddress.parse(self.config.relay), partner, password, **common)
+            progress = "Conectando con el servidor…"
+            recent_key = partner
+        else:
+            parsed = parse_target(target)
+            if not parsed:
+                await ws.send_json({"type": "connect_error",
+                                    "message": "Escribe un código de conexión o una dirección IP:puerto."})
+                return None
+            host, port = parsed
+            viewer = ViewerSession.direct(host, port, password, **common)
+            progress = f"Conectando directamente con {host}:{port}…"
+        await ws.send_json({"type": "connect_progress", "message": progress})
         try:
             info = await viewer.connect()
         except AuthError as exc:
@@ -245,12 +294,13 @@ class UIServer:
             await ws.send_json({"type": "connect_error", "message": str(exc)})
             return None
         except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError) as exc:
+            hint = ("No se pudo conectar. Comprueba el código/IP, que el otro equipo tenga "
+                    "TeamLooker abierto y, entre redes distintas, que el puerto esté accesible.")
             await ws.send_json({"type": "connect_error",
-                                "message": f"No se pudo contactar con el servidor {self.config.relay}: "
-                                           f"{exc.__class__.__name__}"})
+                                "message": f"{hint} ({exc.__class__.__name__})"})
             return None
         self.viewers.add(viewer)
-        self.config.add_recent(partner, info.get("hostname", ""))
+        self.config.add_recent(recent_key, info.get("hostname", ""))
         self._broadcast(self._state())
         await ws.send_json({"type": "connected", "info": info,
                             "download_dir": str(viewer.download_dir),
@@ -322,10 +372,13 @@ async def run_app(config: Config, port: int = 0, open_browser: bool = True,
     if host:
         host.start()
     print(f"TeamLooker {__version__}")
-    if host:
+    if host and config.mode == "direct":
+        print(f"  Contraseña:   {host.session_password}")
+        print("  Modo:         directo (sin servidor)")
+    elif host:
         print(f"  Tu ID:        {host.device_id}")
         print(f"  Contraseña:   {host.session_password}")
-    print(f"  Servidor:     {config.relay}")
+        print(f"  Servidor:     {config.relay}")
     print(f"  Interfaz:     {ui.url}")
     if open_browser:
         ui.open_browser()

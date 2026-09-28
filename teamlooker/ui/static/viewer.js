@@ -4,8 +4,10 @@
   const { el, toast, formatId, formatSize } = TL;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
-  const partner = (params.get("partner") || "").replace(/\D/g, "");
+  const target = (params.get("target") || params.get("partner") || "").trim();
   const mode = params.get("mode") === "files" ? "files" : "control";
+  const targetLabel = /^[0-9]{9}$/.test(target.replace(/\D/g, "")) && target.replace(/\D/g, "").length === 9
+    ? formatId(target) : target.toUpperCase();
 
   const canvas = $("screen");
   const ctx = canvas.getContext("2d");
@@ -33,8 +35,8 @@
   const transfers = new Map();
 
   $("auth-text").textContent =
-    `Introduce la contraseña que aparece en el equipo remoto (ID ${formatId(partner)}).`;
-  document.title = `TeamLooker · ${formatId(partner)}`;
+    `Introduce la contraseña que aparece en el equipo remoto (${targetLabel}).`;
+  document.title = `TeamLooker · ${targetLabel}`;
 
   function send(msg) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -48,7 +50,7 @@
     $("auth-submit").replaceChildren(el("span", { class: "spinner" }), " Conectando…");
     ws = new WebSocket(TL.wsUrl("/ws/viewer"));
     ws.binaryType = "arraybuffer";
-    ws.onopen = () => ws.send(JSON.stringify({ type: "connect", partner, password }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "connect", target, password }));
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
         bytes += ev.data.byteLength;
@@ -128,7 +130,7 @@
     $("auth-overlay").classList.add("hidden");
     $("ended-overlay").classList.add("hidden");
     $("password").value = "";
-    $("partner-label").textContent = `${info.hostname} · ${formatId(partner)}`;
+    $("partner-label").textContent = `${info.hostname} · ${targetLabel}`;
     $("partner-label").title = `${info.os} · TeamLooker ${info.version}`;
     document.title = `${info.hostname} – TeamLooker`;
     const monitorSel = $("monitor");
@@ -466,8 +468,8 @@
   }
 
   // --- start ------------------------------------------------------------------
-  if (partner.length !== 9) {
-    $("auth-error").textContent = "ID de asociado no válido.";
+  if (!target) {
+    $("auth-error").textContent = "Falta el código o la dirección del equipo remoto.";
     $("auth-submit").disabled = true;
   }
   $("password").focus();

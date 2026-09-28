@@ -10,6 +10,7 @@ from typing import Awaitable, Callable
 
 from teamlooker.clipboard import Clipboard
 from teamlooker.config import default_download_dir
+from teamlooker.direct import open_direct
 from teamlooker.files import FileOpError, TransferReceiver, send_file
 from teamlooker.framing import close_writer
 from teamlooker.ids import normalize_id
@@ -21,16 +22,19 @@ log = logging.getLogger("teamlooker.viewer")
 CLIPBOARD_POLL = 1.0
 
 MessageHandler = Callable[[dict, bytes], Awaitable[None]]
+Opener = Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]
 
 
 class ViewerSession:
-    def __init__(self, relay: RelayAddress, partner_id: str, password: str,
+    """Drives one remote session over a raw connection produced by ``opener``."""
+
+    def __init__(self, opener: Opener, password: str, target_label: str = "",
                  name: str = "viewer", on_message: MessageHandler | None = None,
                  clipboard: Clipboard | None = None,
                  download_dir: Path | None = None):
-        self.relay = relay
-        self.partner_id = normalize_id(partner_id)
+        self._opener = opener
         self._password = password
+        self.target_label = target_label
         self.name = name
         self.on_message = on_message
         self.clipboard = clipboard
@@ -44,8 +48,19 @@ class ViewerSession:
         self._clip_last: str | None = None
         self._pending: dict[str, asyncio.Future] = {}
 
+    @classmethod
+    def direct(cls, host: str, port: int, password: str, **kwargs) -> "ViewerSession":
+        return cls(lambda: open_direct(host, port), password,
+                   target_label=f"{host}:{port}", **kwargs)
+
+    @classmethod
+    def relay(cls, relay: RelayAddress, partner_id: str, password: str, **kwargs) -> "ViewerSession":
+        partner_id = normalize_id(partner_id)
+        return cls(lambda: connect_to_host(relay, partner_id), password,
+                   target_label=partner_id, **kwargs)
+
     async def connect(self) -> dict:
-        reader, writer = await connect_to_host(self.relay, self.partner_id)
+        reader, writer = await self._opener()
         try:
             self.channel = await viewer_handshake(reader, writer, self._password)
         except BaseException:

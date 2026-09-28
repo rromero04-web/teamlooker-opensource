@@ -13,7 +13,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
-from teamlooker import DEFAULT_RELAY_PORT
+from teamlooker import DEFAULT_DIRECT_PORT, DEFAULT_RELAY_PORT
 from teamlooker.srp import create_verifier
 
 DEFAULT_PERMISSIONS = {"control": True, "files": True, "clipboard": True}
@@ -53,6 +53,10 @@ class Config:
             changed = True
         self.data.setdefault("relay", os.environ.get("TEAMLOOKER_RELAY",
                                                      f"127.0.0.1:{DEFAULT_RELAY_PORT}"))
+        # Direct peer-to-peer is the default: no server involved.
+        self.data.setdefault("mode", "direct")
+        self.data.setdefault("direct_port", DEFAULT_DIRECT_PORT)
+        self.data.setdefault("enable_upnp", True)
         self.data.setdefault("device_name", _hostname())
         perms = dict(DEFAULT_PERMISSIONS)
         perms.update(self.data.get("permissions", {}))
@@ -84,6 +88,33 @@ class Config:
     @relay.setter
     def relay(self, value: str) -> None:
         self.data["relay"] = value
+        self.save()
+
+    @property
+    def mode(self) -> str:
+        return self.data.get("mode", "direct")
+
+    @mode.setter
+    def mode(self, value: str) -> None:
+        self.data["mode"] = "relay" if value == "relay" else "direct"
+        self.save()
+
+    @property
+    def direct_port(self) -> int:
+        return int(self.data.get("direct_port", DEFAULT_DIRECT_PORT))
+
+    @direct_port.setter
+    def direct_port(self, value: int) -> None:
+        self.data["direct_port"] = int(value)
+        self.save()
+
+    @property
+    def enable_upnp(self) -> bool:
+        return bool(self.data.get("enable_upnp", True))
+
+    @enable_upnp.setter
+    def enable_upnp(self, value: bool) -> None:
+        self.data["enable_upnp"] = bool(value)
         self.save()
 
     @property

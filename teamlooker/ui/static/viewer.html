@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TeamLooker · Sesión remota</title>
-<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/favicon.ico" sizes="any">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="viewer">
 <div class="toolbar" id="toolbar">
+  <img class="tl-mark" src="/static/logo.svg" alt="TeamLooker">
   <span class="partner" id="partner-label">Conectando…</span>
   <div class="menu">
     <button id="actions-btn">Acciones ▾</button>
@@ -77,7 +79,8 @@
 
 <div class="overlay" id="auth-overlay">
   <form class="dialog" id="auth-form">
-    <h2>Autenticación</h2>
+    <img class="dlg-logo" src="/static/logo.svg" width="56" height="56" alt="">
+    <h2>Conexión segura</h2>
     <p class="muted" id="auth-text">Introduce la contraseña que aparece en el equipo remoto.</p>
     <input type="password" id="password" placeholder="Contraseña" autocomplete="off" required>
     <div class="error-text" id="auth-error"></div>
